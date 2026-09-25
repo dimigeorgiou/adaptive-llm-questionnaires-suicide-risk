@@ -20,7 +20,7 @@ from typing   import Dict, Any, List, Tuple
 # -*-*-*-*-*-*-*-*-*-*-*-* #
 #     Framework Modules    #
 # -*-*-*-*-*-*-*-*-*-*-*-* #
-import dataset, logging
+import logging
 import logging.handlers as handlers
 from configparser import RawConfigParser
 
@@ -39,7 +39,10 @@ class MkI(object):
 
     class __MkI:
         def __init__(self, **kwargs):
-            self.config  = self.get_config("./config/config.ini")
+            config_path  = kwargs.get("config_path") or os.environ.get(
+                "ADAPTIVE_QUESTIONNAIRES_CONFIG", "./config/config.ini"
+            )
+            self.config  = self.get_config(config_path)
             self.dataset = self.get_dataset() if kwargs.get("_dataset", False) else None
             self.logging = self.get_logging() if kwargs.get("_logging", False) else None
             self.m3      = self.get_m3() if kwargs.get("_m3", False) else None
@@ -95,6 +98,9 @@ class DataSet(object):
         full ORM model - essentially, databases can be used like a JSON file
     """
     def __init__(self, config_obj):
+        # Optional dependency (unused by the pipeline): pip install "adaptive-questionnaires[legacy-db]"
+        global dataset
+        import dataset
         self.config = config_obj
         self.db     = self.db_connect()
 
@@ -460,8 +466,11 @@ class Logger(object):
             ----
                 :returns: FileHandler class instance with "self.formatter" as formatter
         """
-        # Creating a handler
-        handler = logging.FileHandler(self.log_fn_path)
+        # Creating a handler (the log directory is git-ignored, so create it; audit issue D)
+        log_dir = os.path.dirname(self.log_fn_path)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        handler = logging.FileHandler(self.log_fn_path, encoding="utf-8")
         # Adding the formatter to the handler
         handler.setFormatter(self.formatter)
         return handler

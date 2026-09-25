@@ -1,0 +1,124 @@
+{
+ "candidates": [
+  {
+   "category": "Routine",
+   "text": "How have your days been structured this week?"
+  },
+  {
+   "category": "Routine",
+   "text": "What time have you usually been going to sleep?"
+  },
+  {
+   "category": "Routine",
+   "text": "How has your sleep been over the past week?"
+  },
+  {
+   "category": "Routine",
+   "text": "What has your morning routine looked like lately?"
+  },
+  {
+   "category": "Routine",
+   "text": "How have your meals fitted into your day?"
+  },
+  {
+   "category": "Routine",
+   "text": "What part of your day feels most predictable?"
+  },
+  {
+   "category": "Mood",
+   "text": "How would you describe your mood over the past few days?"
+  },
+  {
+   "category": "Mood",
+   "text": "What has lifted your mood recently, even briefly?"
+  },
+  {
+   "category": "Mood",
+   "text": "When during the week did you feel most low?"
+  },
+  {
+   "category": "Mood",
+   "text": "How has your energy been compared with last week?"
+  },
+  {
+   "category": "Mood",
+   "text": "What feelings have been most present for you lately?"
+  },
+  {
+   "category": "Mood",
+   "text": "How have you been feeling when you wake up?"
+  },
+  {
+   "category": "Connection",
+   "text": "Who have you spoken to this week?"
+  },
+  {
+   "category": "Connection",
+   "text": "Who do you talk to when you feel overwhelmed?"
+  },
+  {
+   "category": "Connection",
+   "text": "How have your contacts with family been lately?"
+  },
+  {
+   "category": "Connection",
+   "text": "Is there someone you would like to be in touch with more?"
+  },
+  {
+   "category": "Connection",
+   "text": "How connected have you felt to the people around you?"
+  },
+  {
+   "category": "Connection",
+   "text": "What has made it easier or harder to reach out to others?"
+  },
+  {
+   "category": "Coping",
+   "text": "What has helped you get through difficult moments this week?"
+  },
+  {
+   "category": "Coping",
+   "text": "Which coping strategies have you tried recently?"
+  },
+  {
+   "category": "Coping",
+   "text": "What do you usually do when stress builds up?"
+  },
+  {
+   "category": "Coping",
+   "text": "What has been the most stressful part of your week?"
+  },
+  {
+   "category": "Coping",
+   "text": "What would make next week a little easier?"
+  },
+  {
+   "category": "Coping",
+   "text": "Which of your usual strategies has worked less well lately?"
+  },
+  {
+   "category": "Goals",
+   "text": "What is one thing you are looking forward to?"
+  },
+  {
+   "category": "Goals",
+   "text": "What small goal would you like to work on this week?"
+  },
+  {
+   "category": "Goals",
+   "text": "What matters most to you at the moment?"
+  },
+  {
+   "category": "Goals",
+   "text": "What progress have you noticed, however small?"
+  },
+  {
+   "category": "Goals",
+   "text": "What would you like to be different a month from now?"
+  },
+  {
+   "category": "Goals",
+   "text": "What activity has given you a sense of purpose recently?"
+  }
+ ]
+}

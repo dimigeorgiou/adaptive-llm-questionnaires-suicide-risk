@@ -6,7 +6,7 @@ This repository is **companion source code** for the NICE TEAS Europe 2026 paper
 
 ## What is licensed
 
-- Python pipeline code under `main.py`, `lib/`, `run.sh`, and related docs are released under the **MIT License** (see `LICENSE`).
+- Python pipeline code under `main.py`, `src/adaptive_questionnaires/`, `scripts/run.sh`, and related docs are released under the **MIT License** (see `LICENSE`).
 
 ## What is not included / not licensed for redistribution
 
@@ -21,4 +21,11 @@ This repository is **companion source code** for the NICE TEAS Europe 2026 paper
 - LLM outputs are for **clinician-supervised** questionnaire generation only — not diagnosis or automated risk scoring
 - Crisis (Greece): **1018** (KLIMAKA)
 
-See `docs/ETHICS.md`.
+See the "Ethics & safety" section of `README.md`.
+
+## Fork modifications
+
+This copy is a fork of `dimigeorgiou/adaptive-llm-questionnaires-suicide-risk`. Changes made in the
+fork (the `adaptive-questioning-v2` branch) are listed in `CHANGELOG.md`, are released under the same
+MIT License, and are not endorsed by the original authors. The paths above were corrected in the fork:
+upstream referred to `lib/`, a root-level `run.sh`, and `docs/ETHICS.md`, none of which exist.

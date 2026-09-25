@@ -1,0 +1,73 @@
+metric,baseline,method,primary,sessions_from,direction,a_mean,b_mean,diff,ci_low,ci_high,n_patients,assessment,ablation
+intent_duplicate_rate,V2,V2 −redundancy,True,0,lower better,0.2816666666666666,0.37833333333333335,0.0966666666666667,0.05916666666666669,0.13555555555555554,30,worse,V2 −redundancy
+longitudinal_repetition,V2,V2 −redundancy,True,1,lower better,0.4298174603174604,0.4046058201058201,-0.025211640211640227,-0.06583068783068784,0.014830687830687798,30,no clear difference,V2 −redundancy
+change_followup_rate,V2,V2 −redundancy,True,1,higher better,0.8444444444444444,0.8694444444444444,0.024999999999999998,-0.036111111111111115,0.0972222222222222,30,no clear difference,V2 −redundancy
+min_per_category,V2,V2 −redundancy,True,0,higher better,3.7611111111111106,3.8777777777777778,0.11666666666666664,0.027777777777777752,0.21666666666666654,30,better,V2 −redundancy
+synthetic_rating_quality,V2,V2 −redundancy,True,0,higher better,3.2575701490965465,3.266518562396743,0.008948413300196039,-0.03403611791207406,0.049469122018562205,30,no clear difference,V2 −redundancy
+exact_duplicate_rate,V2,V2 −redundancy,False,0,lower better,0.0,0.0,0.0,0.0,0.0,30,no clear difference,V2 −redundancy
+semantic_near_dup_pair_rate,V2,V2 −redundancy,False,0,lower better,0.0017543859649122805,0.007426900584795322,0.005672514619883041,0.0042397660818713455,0.00716374269005848,30,worse,V2 −redundancy
+semantic_diversity,V2,V2 −redundancy,False,0,higher better,0.7269711151080565,0.7195450895756178,-0.007426025532438644,-0.0128483924522237,-0.0024241692431607306,30,worse,V2 −redundancy
+categories_covered,V2,V2 −redundancy,False,0,higher better,1.0,1.0,0.0,0.0,0.0,30,no clear difference,V2 −redundancy
+category_entropy,V2,V2 −redundancy,False,0,higher better,0.9978897124897561,0.9987618994579985,0.0008721869682425794,0.00021804674206064392,0.00161354589124878,30,better,V2 −redundancy
+relevance_proxy_new,V2,V2 −redundancy,False,1,higher better,0.3464189086273774,0.38033386034300964,0.033914951715632344,0.020640049454854092,0.048404323351099,30,better,V2 −redundancy
+replacement_churn,V2,V2 −redundancy,False,1,descriptive,0.25799999999999995,0.26533333333333337,0.007333333333333336,-0.008999999999999998,0.024333333333333332,30,descriptive,V2 −redundancy
+mean_words,V2,V2 −redundancy,False,0,descriptive,8.764999999999999,8.699722222222222,-0.0652777777777778,-0.15055555555555536,0.01499999999999968,30,descriptive,V2 −redundancy
+invalid_output_rate,V2,V2 −redundancy,False,0,lower better,0.05583333333333334,0.05583333333333334,0.0,0.0,0.0,30,no clear difference,V2 −redundancy
+llm_calls,V2,V2 −redundancy,False,0,descriptive,1.0,1.0,0.0,0.0,0.0,30,descriptive,V2 −redundancy
+retries,V2,V2 −redundancy,False,0,lower better,0.0,0.0,0.0,0.0,0.0,30,no clear difference,V2 −redundancy
+generated_items,V2,V2 −redundancy,False,0,descriptive,35.0,35.0,0.0,0.0,0.0,30,descriptive,V2 −redundancy
+selection_ms,V2,V2 −redundancy,False,0,descriptive,12.742245413311242,11.333393093405498,-1.4088523199057408,-2.1380182756628425,-0.671425638979094,30,descriptive,V2 −redundancy
+intent_duplicate_rate,V2,V2 −coverage,True,0,lower better,0.2816666666666666,0.28333333333333327,0.0016666666666666672,-0.030833333333333334,0.03444444444444446,30,no clear difference,V2 −coverage
+longitudinal_repetition,V2,V2 −coverage,True,1,lower better,0.4298174603174604,0.41807671957671955,-0.011740740740740744,-0.046108465608465626,0.02755026455026453,30,no clear difference,V2 −coverage
+change_followup_rate,V2,V2 −coverage,True,1,higher better,0.8444444444444444,0.861111111111111,0.016666666666666663,-0.025000000000000005,0.058333333333333334,30,no clear difference,V2 −coverage
+min_per_category,V2,V2 −coverage,True,0,higher better,3.7611111111111106,2.2722222222222217,-1.4888888888888887,-1.5833333333333335,-1.3888888888888886,30,worse,V2 −coverage
+synthetic_rating_quality,V2,V2 −coverage,True,0,higher better,3.2575701490965465,3.2992614066262167,0.04169125752966926,0.009645623423262783,0.07526818234728784,30,better,V2 −coverage
+exact_duplicate_rate,V2,V2 −coverage,False,0,lower better,0.0,0.0,0.0,0.0,0.0,30,no clear difference,V2 −coverage
+semantic_near_dup_pair_rate,V2,V2 −coverage,False,0,lower better,0.0017543859649122805,0.0014035087719298245,-0.0003508771929824562,-0.0011403508771929824,0.00043859649122806997,30,no clear difference,V2 −coverage
+semantic_diversity,V2,V2 −coverage,False,0,higher better,0.7269711151080565,0.7278104709333362,0.0008393558252799601,-0.0032168030255823156,0.004369087622670642,30,no clear difference,V2 −coverage
+categories_covered,V2,V2 −coverage,False,0,higher better,1.0,1.0,0.0,0.0,0.0,30,no clear difference,V2 −coverage
+category_entropy,V2,V2 −coverage,False,0,higher better,0.9978897124897561,0.9617909620085453,-0.03609875048121043,-0.039127977652467796,-0.03301723362700428,30,worse,V2 −coverage
+relevance_proxy_new,V2,V2 −coverage,False,1,higher better,0.3464189086273774,0.3602616412992042,0.013842732671826678,0.0028281398960362304,0.0268106068683252,30,better,V2 −coverage
+replacement_churn,V2,V2 −coverage,False,1,descriptive,0.25799999999999995,0.25166666666666665,-0.006333333333333334,-0.019666666666666676,0.007999999999999998,30,descriptive,V2 −coverage
+mean_words,V2,V2 −coverage,False,0,descriptive,8.764999999999999,8.73611111111111,-0.028888888888888964,-0.08694444444444442,0.028055555555555677,30,descriptive,V2 −coverage
+invalid_output_rate,V2,V2 −coverage,False,0,lower better,0.05583333333333334,0.05583333333333334,0.0,0.0,0.0,30,no clear difference,V2 −coverage
+llm_calls,V2,V2 −coverage,False,0,descriptive,1.0,1.0,0.0,0.0,0.0,30,descriptive,V2 −coverage
+retries,V2,V2 −coverage,False,0,lower better,0.0,0.0,0.0,0.0,0.0,30,no clear difference,V2 −coverage
+generated_items,V2,V2 −coverage,False,0,descriptive,35.0,35.0,0.0,0.0,0.0,30,descriptive,V2 −coverage
+selection_ms,V2,V2 −coverage,False,0,descriptive,12.742245413311242,13.556157864837186,0.8139124515259433,-0.19531298894435167,1.9932690218815379,30,descriptive,V2 −coverage
+intent_duplicate_rate,V2,V2 −longitudinal,True,0,lower better,0.2816666666666666,0.2755555555555556,-0.006111111111111117,-0.021666666666666667,0.009444444444444434,30,no clear difference,V2 −longitudinal
+longitudinal_repetition,V2,V2 −longitudinal,True,1,lower better,0.4298174603174604,0.4597089947089948,0.029891534391534396,0.0051957671957671946,0.05602645502645503,30,worse,V2 −longitudinal
+change_followup_rate,V2,V2 −longitudinal,True,1,higher better,0.8444444444444444,0.8138888888888889,-0.030555555555555555,-0.07222222222222222,0.008333333333333333,30,no clear difference,V2 −longitudinal
+min_per_category,V2,V2 −longitudinal,True,0,higher better,3.7611111111111106,3.75,-0.01111111111111113,-0.08333333333333338,0.06111111111111113,30,no clear difference,V2 −longitudinal
+synthetic_rating_quality,V2,V2 −longitudinal,True,0,higher better,3.2575701490965465,3.2597368832832716,0.0021667341867239137,-0.025201208367981637,0.02432279663300747,30,no clear difference,V2 −longitudinal
+exact_duplicate_rate,V2,V2 −longitudinal,False,0,lower better,0.0,0.0,0.0,0.0,0.0,30,no clear difference,V2 −longitudinal
+semantic_near_dup_pair_rate,V2,V2 −longitudinal,False,0,lower better,0.0017543859649122805,0.0018128654970760234,5.847953216374268e-05,-0.0005263157894736842,0.0006725146198830411,30,no clear difference,V2 −longitudinal
+semantic_diversity,V2,V2 −longitudinal,False,0,higher better,0.7269711151080565,0.7260853100357912,-0.0008858050722651482,-0.0028712665261869295,0.0012860317993587888,30,no clear difference,V2 −longitudinal
+categories_covered,V2,V2 −longitudinal,False,0,higher better,1.0,1.0,0.0,0.0,0.0,30,no clear difference,V2 −longitudinal
+category_entropy,V2,V2 −longitudinal,False,0,higher better,0.9978897124897561,0.9979592174786133,6.950498885745319e-05,-0.0006888927206106602,0.0008626551927542988,30,no clear difference,V2 −longitudinal
+relevance_proxy_new,V2,V2 −longitudinal,False,1,higher better,0.3464189086273774,0.34686880202655895,0.0004498933991815705,-0.009280159321179768,0.01019187685002512,30,no clear difference,V2 −longitudinal
+replacement_churn,V2,V2 −longitudinal,False,1,descriptive,0.25799999999999995,0.2536666666666667,-0.004333333333333327,-0.014999999999999994,0.005999999999999999,30,descriptive,V2 −longitudinal
+mean_words,V2,V2 −longitudinal,False,0,descriptive,8.764999999999999,8.779722222222222,0.014722222222222036,-0.036944444444444655,0.07388888888888889,30,descriptive,V2 −longitudinal
+invalid_output_rate,V2,V2 −longitudinal,False,0,lower better,0.05583333333333334,0.05583333333333334,0.0,0.0,0.0,30,no clear difference,V2 −longitudinal
+llm_calls,V2,V2 −longitudinal,False,0,descriptive,1.0,1.0,0.0,0.0,0.0,30,descriptive,V2 −longitudinal
+retries,V2,V2 −longitudinal,False,0,lower better,0.0,0.0,0.0,0.0,0.0,30,no clear difference,V2 −longitudinal
+generated_items,V2,V2 −longitudinal,False,0,descriptive,35.0,35.0,0.0,0.0,0.0,30,descriptive,V2 −longitudinal
+selection_ms,V2,V2 −longitudinal,False,0,descriptive,12.742245413311242,12.875172277239875,0.13292686392863598,-0.5092222696273692,0.5978305410179827,30,descriptive,V2 −longitudinal
+intent_duplicate_rate,V2,V2 −clinician_history,True,0,lower better,0.2816666666666666,0.26,-0.02166666666666667,-0.05166666666666667,0.00777777777777776,30,no clear difference,V2 −clinician_history
+longitudinal_repetition,V2,V2 −clinician_history,True,1,lower better,0.4298174603174604,0.40458267195767206,-0.025234788359788356,-0.05897685185185188,0.012477513227513224,30,no clear difference,V2 −clinician_history
+change_followup_rate,V2,V2 −clinician_history,True,1,higher better,0.8444444444444444,0.8666666666666668,0.022222222222222216,-0.041666666666666664,0.08055555555555555,30,no clear difference,V2 −clinician_history
+min_per_category,V2,V2 −clinician_history,True,0,higher better,3.7611111111111106,3.9444444444444446,0.18333333333333326,0.11111111111111108,0.26111111111111107,30,better,V2 −clinician_history
+synthetic_rating_quality,V2,V2 −clinician_history,True,0,higher better,3.2575701490965465,2.989113833158622,-0.2684563159379254,-0.31019687027076953,-0.23230656850994577,30,worse,V2 −clinician_history
+exact_duplicate_rate,V2,V2 −clinician_history,False,0,lower better,0.0,0.0,0.0,0.0,0.0,30,no clear difference,V2 −clinician_history
+semantic_near_dup_pair_rate,V2,V2 −clinician_history,False,0,lower better,0.0017543859649122805,0.0021637426900584793,0.0004093567251461987,-0.00032163742690058487,0.0011111111111111111,30,no clear difference,V2 −clinician_history
+semantic_diversity,V2,V2 −clinician_history,False,0,higher better,0.7269711151080565,0.7303797765525596,0.003408661444503199,-0.0010675936315378924,0.00820004515874515,30,no clear difference,V2 −clinician_history
+categories_covered,V2,V2 −clinician_history,False,0,higher better,1.0,1.0,0.0,0.0,0.0,30,no clear difference,V2 −clinician_history
+category_entropy,V2,V2 −clinician_history,False,0,higher better,0.9978897124897561,0.9995639065158788,0.0016741940261228254,0.00102005379994089,0.0024148780276241457,30,better,V2 −clinician_history
+relevance_proxy_new,V2,V2 −clinician_history,False,1,higher better,0.3464189086273774,0.34852519704455714,0.0021062884171797933,-0.010906062953770142,0.01535963641151062,30,no clear difference,V2 −clinician_history
+replacement_churn,V2,V2 −clinician_history,False,1,descriptive,0.25799999999999995,0.2643333333333333,0.006333333333333335,-0.014333333333333332,0.027999999999999994,30,descriptive,V2 −clinician_history
+mean_words,V2,V2 −clinician_history,False,0,descriptive,8.764999999999999,8.814444444444444,0.04944444444444448,0.003333333333333558,0.09444444444444434,30,descriptive,V2 −clinician_history
+invalid_output_rate,V2,V2 −clinician_history,False,0,lower better,0.05583333333333334,0.05583333333333334,0.0,0.0,0.0,30,no clear difference,V2 −clinician_history
+llm_calls,V2,V2 −clinician_history,False,0,descriptive,1.0,1.0,0.0,0.0,0.0,30,descriptive,V2 −clinician_history
+retries,V2,V2 −clinician_history,False,0,lower better,0.0,0.0,0.0,0.0,0.0,30,no clear difference,V2 −clinician_history
+generated_items,V2,V2 −clinician_history,False,0,descriptive,35.0,35.0,0.0,0.0,0.0,30,descriptive,V2 −clinician_history
+selection_ms,V2,V2 −clinician_history,False,0,descriptive,12.742245413311242,12.55957750060285,-0.1826679127083884,-0.9538100579650037,0.5467260424565111,30,descriptive,V2 −clinician_history

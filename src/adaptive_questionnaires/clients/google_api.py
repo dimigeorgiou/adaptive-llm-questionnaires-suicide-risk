@@ -18,7 +18,6 @@ import requests, pickle, os, json, yaml, time, codecs, base64, sys, re
 import urllib.parse
 import pandas as pd
 import numpy as np
-from bs4      import BeautifulSoup
 from base64   import urlsafe_b64encode
 from datetime import datetime, timedelta, timezone
 from typing  import (
@@ -31,7 +30,6 @@ from typing  import (
 # -*-*-*-*-*-*-*-*-*-*-**-*-*-* #
 import webbrowser
 import subprocess
-import psutil
 import socket
 from retry            import retry
 from urllib.parse     import urlencode
@@ -45,6 +43,62 @@ from oauth2client.file              import Storage
 from google.auth.transport.requests import Request
 from google.oauth2.credentials      import Credentials
 from googleapiclient.discovery      import build
+from googleapiclient.errors         import HttpError
+
+from adaptive_questionnaires.privacy import redact
+
+
+# Scopes: least privilege. The questionnaire pipeline only reads/writes Google Sheets.
+# The Gmail/Docs/Drive wrappers below are NOT used by the pipeline; if you use them,
+# add the scopes they need via `[api_google] scopes = ...` (space/comma separated)
+# and re-consent (delete the *_accessed.json token file).
+DEFAULT_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+TRANSIENT_HTTP_STATUS = {429, 500, 502, 503, 504}
+
+
+def _is_transient(exc: Exception) -> bool:
+    if isinstance(exc, HttpError):
+        status = getattr(getattr(exc, "resp", None), "status", None)
+        try:
+            return int(status) in TRANSIENT_HTTP_STATUS
+        except (TypeError, ValueError):
+            return False
+    return isinstance(exc, (requests.ConnectionError, requests.Timeout))
+
+
+def retry_transient(tries: int = 4, delay: float = 2.0, backoff: float = 2.0, max_delay: float = 30.0,
+                    sleep=time.sleep):
+    """Retry only transient failures (429/5xx HttpError, connection errors, timeouts).
+
+    Upstream decorated googleapiclient calls with ``@retry(requests.RequestException)``,
+    but googleapiclient raises ``HttpError``, so retries never fired (audit issue I).
+    Permanent errors (400/401/403/404) are raised immediately.
+    """
+    def deco(fn):
+        import functools
+
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            wait = delay
+            for attempt in range(1, tries + 1):
+                try:
+                    return fn(*args, **kwargs)
+                except Exception as e:  # noqa: BLE001 - filtered below
+                    if attempt == tries or not _is_transient(e):
+                        raise
+                    sleep(min(wait, max_delay))
+                    wait *= backoff
+        return wrapper
+    return deco
+
+
+def configured_scopes(config) -> list:
+    try:
+        raw = config.get("api_google", "scopes", fallback="")
+    except Exception:
+        raw = ""
+    scopes = [x for x in re.split(r"[\s,]+", raw or "") if x]
+    return scopes or list(DEFAULT_SCOPES)
 ## Google Email API
 from email.message                  import EmailMessage
 from email.mime.text                import MIMEText
@@ -56,15 +110,9 @@ from googleapiclient.http           import MediaFileUpload
 
 
 class GoogleAPI(object):
-    SCOPES = [
-        'https://www.googleapis.com/auth/drive.file',
-        'https://www.googleapis.com/auth/drive.readonly',
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/spreadsheets.readonly',
-        'https://www.googleapis.com/auth/gmail.readonly',
-        'https://www.googleapis.com/auth/gmail.modify',
-        'https://www.googleapis.com/auth/documents'
-    ]
+    # Upstream requested drive.readonly, gmail.modify, documents, ... although only Sheets
+    # is used. Default is now Sheets-only; override per deployment via config.
+    SCOPES = list(DEFAULT_SCOPES)
     MISSING_CLIENT_SECRETS_MESSAGE = f"""
         WARNING: Please configure OAuth 2.0
 
@@ -80,6 +128,7 @@ class GoogleAPI(object):
     
     def __init__(self, mk1):
         self.mk1 = mk1
+        self.SCOPES = configured_scopes(self.mk1.config)
         ## *-*-*-*-*-*-*-*- Configuration (attributes) -*-*-*-*-*-*-*-* ##
         self.token_saved_desination = self.mk1.config.get("api_google","token_saved_desination") # local, secrets
         self.token_file_path        = self.mk1.config.get("api_google","token_file_path")
@@ -417,19 +466,16 @@ class GoogleSheetsAPI(GoogleAPI):
             col (int): Column number (1-indexed).
             value: Value to set.
         """
-        try:
-            range_ = f"{tab_name}!{self._get_column_letter(col)}{row}"
-            body = {"values": [[value]]}
-            self.service.spreadsheets().values().update(
-                spreadsheetId    = spreadsheet_id,
-                range            = range_,
-                valueInputOption = "USER_ENTERED",
-                body             = body
-            ).execute()
-            self.mk1.logging.logger.info(f"Cell updated at {range_} with value: {value}")
-        except Exception as e:
-            raise e
-            self.mk1.logging.logger.error(f"(update_cell) Failed to update cell: {e}")
+        range_ = f"{tab_name}!{self._get_column_letter(col)}{row}"
+        body = {"values": [[value]]}
+        retry_transient()(lambda: self.service.spreadsheets().values().update(
+            spreadsheetId    = spreadsheet_id,
+            range            = range_,
+            valueInputOption = "USER_ENTERED",
+            body             = body
+        ).execute())()
+        # value may be a whole clinical questionnaire: never log it verbatim by default
+        self.mk1.logging.logger.info(f"Cell updated at {range_} with value: {redact(value)}")
 
     def _get_column_letter(self, col_idx):
         """Convert 1-indexed column number to letter (1 -> A, 27 -> AA)."""
@@ -510,6 +556,10 @@ class GoogleSheetsAPI(GoogleAPI):
             headers = [f"Column_{i}" for i in range(len(values[0]))]
             data = values
 
+        # The API trims trailing empty cells per row. If *every* row is shorter than the
+        # header, pd.DataFrame raises (audit issue S), so pad/truncate rows to header width.
+        width = len(headers)
+        data = [(list(r) + [""] * width)[:width] for r in data]
         # Just pass headers as a list — pandas will keep duplicates
         df = pd.DataFrame(data, columns=headers)
 
@@ -521,7 +571,7 @@ class GoogleSheetsAPI(GoogleAPI):
         
 
     # GET requests
-    @retry((requests.RequestException, requests.exceptions.HTTPError), tries=3, delay=2, jitter=(0, 2))
+    @retry_transient()
     def get_df_from_tab(self, spreadsheet_id: str, spreadsheet_range_name: str, spreadsheet_has_index: bool = True, spreadsheet_has_headers: bool = True, spreadsheet_empty_value: str = "") -> pd.DataFrame:
         try:
             result = self.service.spreadsheets().values().get(
@@ -574,7 +624,7 @@ class GoogleSheetsAPI(GoogleAPI):
         return int(row_number), col_number
             
 
-    @retry((requests.RequestException, requests.exceptions.HTTPError), tries=3, delay=2, jitter=(0, 2))
+    @retry_transient()
     def update_range(self, spreadsheet_id: str, tab_name: str, range_name: str, values: List) -> bool:
         """Update a specific range in a Google Sheet, auto-expanding rows/cols if needed."""
         try:
@@ -622,9 +672,8 @@ class GoogleSheetsAPI(GoogleAPI):
             return True
 
         except Exception as e:
-            raise e
-            self.mk1.logging.logger.error(f"(GoogleSheetsAPI.update_range) Failed: {e}")
-            return False
+            self.mk1.logging.logger.error(f"(GoogleSheetsAPI.update_range) Failed: {type(e).__name__}")
+            raise
 
 
     @retry(exceptions=requests.RequestException, tries=10, delay=2, jitter=(0, 2))
@@ -758,14 +807,16 @@ class GoogleSheetsAPI(GoogleAPI):
             headers=self.auth_header,
             json=body,
         )
-        print(response)
-
         if response.status_code in self.__server_err_codes:
             raise requests.RequestException(
-                f"Got 5XX error from Sheets API when writing data: {response.text}"
+                f"Got 5XX error from Sheets API when writing data (status {response.status_code})"
             )
 
-        self.request_check(response)
+        # Upstream discarded request_check()'s result, so a 4xx write "succeeded"
+        # silently (audit issue J). Raise instead.
+        if self.request_check(response) is None:
+            raise RuntimeError(f"(GoogleSheetsAPI.write_df_to_tab2) write to {tab_name!r} failed "
+                               f"with HTTP {response.status_code}")
 
         result = response.json()
 
@@ -811,6 +862,10 @@ class GoogleSheetsAPI(GoogleAPI):
         - Adjust column widths so header text fully appears
         """
         try:
+            # get_tab_gid returns 0 for a missing tab, which would format the first
+            # tab instead (audit issue P).
+            if not self.sheet_exists(spreadsheet_id, tab_name):
+                raise ValueError(f"tab {tab_name!r} not found; refusing to format sheet id 0")
             sheet_id = self.get_tab_gid(spreadsheet_id, tab_name)
             num_rows, num_cols = df.shape
 
@@ -893,14 +948,14 @@ class GoogleSheetsAPI(GoogleAPI):
                 headers = self.auth_header, 
                 json    = {"requests": requests_body}
             )
-            self.request_check(response)
+            if self.request_check(response) is None:
+                raise RuntimeError(f"formatting {tab_name!r} failed with HTTP {response.status_code}")
             self.mk1.logging.logger.info(f"(GoogleSheetsAPI.format_sheet_tab) Formatted tab {tab_name}")
             return True
 
         except Exception as e:
-            raise e
             self.mk1.logging.logger.error(f"(GoogleSheetsAPI.format_sheet_tab) Failed to format tab: {e}")
-            return False
+            raise
 
 
 
@@ -1292,6 +1347,7 @@ class GoogleEmailAPI(GoogleAPI):
 
 
     def extract_raw_data_from_html(self, html_content : str):
+        from bs4 import BeautifulSoup  # optional: only needed by the (unused) Gmail helper
         soup = BeautifulSoup(html_content, 'html.parser')
         # Extract plain text from HTML
         text_content = soup.get_text(separator='\n').strip()

@@ -1,0 +1,52 @@
+{
+ "candidates": [
+  {
+   "category": "Routine",
+   "text": "How has your sleep changed since last week?"
+  },
+  {
+   "category": "Routine",
+   "text": "What has been getting in the way of sleeping?"
+  },
+  {
+   "category": "Routine",
+   "text": "How have your meals been since your sleep changed?"
+  },
+  {
+   "category": "Mood",
+   "text": "How has your mood been since we last spoke?"
+  },
+  {
+   "category": "Mood",
+   "text": "What has lifted your mood recently, even briefly?"
+  },
+  {
+   "category": "Connection",
+   "text": "Who have you spoken to this week?"
+  },
+  {
+   "category": "Connection",
+   "text": "Who have you turned to for support since last week?"
+  },
+  {
+   "category": "Coping",
+   "text": "What has helped you get through difficult moments this week?"
+  },
+  {
+   "category": "Coping",
+   "text": "When walking was not possible, what else helped?"
+  },
+  {
+   "category": "Coping",
+   "text": "What has been hardest to cope with since we last met?"
+  },
+  {
+   "category": "Goals",
+   "text": "What small step toward your course have you taken?"
+  },
+  {
+   "category": "Goals",
+   "text": "What would help you keep going with your plans?"
+  }
+ ]
+}

@@ -5,6 +5,11 @@ config/secrets/
 *.pem
 .env
 .env.*
+!.env.example
+*.key
+*credentials*.json
+*token*.json
+client_secret*.json
 
 # Local runtime / clinical artifacts
 data/
@@ -12,9 +17,20 @@ visualizations/
 results/
 logs/
 tmp/
-legacy/
+/legacy/
 outputs/*
 !outputs/.gitkeep
+!outputs/evaluation/
+outputs/evaluation/*
+!outputs/evaluation/*.md
+!outputs/evaluation/*.csv
+!outputs/evaluation/*.json
+# V2 local state, caches and exports (may contain clinical text)
+v2_state/
+.cache/
+*.sqlite
+*.db
+*.xlsx
 
 # Python
 __pycache__/

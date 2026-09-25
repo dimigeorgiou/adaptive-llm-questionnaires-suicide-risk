@@ -1,0 +1,18 @@
+{
+ "anon_subject_id": "S001",
+ "session_id": "S001-s1",
+ "categories": [
+  "Routine",
+  "Mood",
+  "Connection",
+  "Coping",
+  "Goals"
+ ],
+ "notes_by_category": {
+  "Routine": "Keeps a regular daily routine; sleep described as normal.",
+  "Mood": "Mood described as steady.",
+  "Connection": "Weekly contact with a sibling.",
+  "Coping": "Uses walking to manage stress.",
+  "Goals": "Wants to return to a part-time course."
+ }
+}

@@ -8,6 +8,8 @@ Paper: Adaptive LLM-Generated Questionnaires for Suicide Risk Assessment:
 """
 import os
 import re
+import sys
+import json
 import argparse
 import glob
 import numpy as np
@@ -20,20 +22,40 @@ import seaborn as sns
 from adaptive_questionnaires.core.mark_i import MkI
 from adaptive_questionnaires.clients.google_api import GoogleAPI, GoogleSheetsAPI
 from adaptive_questionnaires.clients.openai_client import OpenaiAPI
-from adaptive_questionnaires.clients.dropbox_client import DropboxAPI
+from adaptive_questionnaires.legacy import algorithm as legacy
+from adaptive_questionnaires.legacy.parsing import parse_questionnaire_markdown
+from adaptive_questionnaires.legacy import analysis as legacy_analysis
+from adaptive_questionnaires.prompting import select_prompt_row, split_cell_lines
+from adaptive_questionnaires import privacy
+from adaptive_questionnaires.privacy import redact
 
 
 class Controller():
-    def __init__(self, mk1 : MkI) :
+    def __init__(self, mk1 : MkI, argv=None) :
         self.mk1  = mk1
-        self.args = self.parsing()
+        self.args = self.parsing(argv)
+        privacy.configure(getattr(mk1, "config", None))
+        # Integrity problems found during a run; non-empty -> non-zero exit code.
+        self.run_issues = []
+        # Upstream semantics for the legacy weight update when False (see README).
+        self.strict_validation = self._cfg_bool("adaptive", "legacy_strict_validation", True)
 
         self.__null_values = [
             None, np.nan, "", "#N/A", "null", "nan", "NaN", "None"
         ]
 
 
-    def parsing(self):
+    def _cfg_bool(self, section, key, default):
+        try:
+            return self.mk1.config.getboolean(section, key, fallback=default)
+        except Exception:
+            return default
+
+    def _issue(self, where, message):
+        self.run_issues.append({"where": where, "message": message})
+        print(f"❌ {where}: {message}")
+
+    def parsing(self, argv=None):
         parser = argparse.ArgumentParser()
 
         ## ______________________________ General ______________________________ ##
@@ -42,10 +64,16 @@ class Controller():
             "-o",
             type    = str,
             default = "task1",
-            help    = "Options = {}",
+            help    = "Options = {task0, task1_preparation, task1, task1_analyze_results, "
+                      "task1_visualize_results, v2_select, v2_import_feedback}",
         )
-        
-        return parser.parse_args()
+        parser.add_argument("--subject", help="(V2) anonymous subject id for v2_* operations")
+        parser.add_argument("--session", help="(V2) session context JSON for v2_select")
+        parser.add_argument("--candidates", help="(V2) optional pre-generated candidate JSON (fixture replay)")
+        parser.add_argument("--feedback", help="(V2) clinician feedback CSV for v2_import_feedback")
+        parser.add_argument("--state-dir", default=None, help="(V2) directory for local V2 state")
+
+        return parser.parse_args(argv)
     
 
 
@@ -64,6 +92,8 @@ class Controller():
 
     def _refresh_tokens(self):
         """Optional: sync Google OAuth token from Dropbox (disabled in run() by default)."""
+        # optional dependency: pip install "adaptive-questionnaires[dropbox]"
+        from adaptive_questionnaires.clients.dropbox_client import DropboxAPI
         self.dropbox_api = DropboxAPI(mk1=self.mk1)
         google_oauth_accessed_dbx_path = self.mk1.config.get(
             "dropbox", "google_oauth_accessed_dbx_path"
@@ -109,14 +139,14 @@ class Controller():
             spreadsheet_has_index  = False,
         )
 
-        prompt_info = prompts_info[
-            prompts_info["task"] == "task_0"
-        ]
-        prompt       = prompt_info.loc[0, "prompt"]
-        system_role  = prompt_info.loc[0, "system_role"]
-        user_role    = prompt_info.loc[0, "user_role"]
-        requirements = prompt_info.loc[0, "requirements"].strip().split("\n")
-        examples     = prompt_info.loc[0, "examples"].strip().split("\n")
+        # Upstream used .loc[0] without reset_index (KeyError unless task_0 is the first
+        # prompts row, audit issue C) and passed a list to str.format (issue A).
+        prompt_info  = select_prompt_row(prompts_info, "task_0")
+        prompt       = prompt_info["prompt"]
+        system_role  = prompt_info["system_role"]
+        user_role    = prompt_info["user_role"]
+        requirements = split_cell_lines(prompt_info["requirements"])
+        examples     = split_cell_lines(prompt_info["examples"])
 
 
         # Iterate over each row
@@ -152,9 +182,9 @@ class Controller():
                 ) 
                 
             except Exception as e:
-                raise e
-                print(f"Error processing row {idx}: {str(e)}")
-                output.at[idx, operation] = f"Error: {str(e)}"
+                # Stop: do not write an "Error: ..." string into a clinical questionnaire cell.
+                self._issue(f"task0 row {idx}", f"{type(e).__name__}; stopping (no partial result written for this row)")
+                raise
 
 
 
@@ -176,14 +206,10 @@ class Controller():
         if task0_df.empty:
             raise ValueError("task0 is empty or missing")
 
-        # regex patterns
-        pattern_category = r"### Κατηγορία (\d+): (.+)"
-        pattern_question = r"(\d+)\.\s(.+)"
-
         # Loop over all rows (all patients)
         for row_idx, row in task0_df.iterrows():
-            raw_text = row[1]  # second column = the big "Κατηγορία" text
-            if pd.isna(raw_text):
+            raw_text = row.iloc[1]  # second column = the big "Κατηγορία" text (positional; pandas>=3 safe)
+            if pd.isna(raw_text) or str(raw_text).strip() == "":
                 print(f"⚠️ Row {row_idx} is empty, skipping")
                 continue
 
@@ -195,39 +221,13 @@ class Controller():
                 print(f"ℹ️ Sheet '{sheet_name}' already exists, skipping creation")
                 continue
 
-            lines = raw_text.splitlines()
-            data = []
-            current_category = None
-            current_category_name = None
-
-            for line in lines:
-                cat_match = re.match(pattern_category, line.strip())
-                q_match   = re.match(pattern_question, line.strip())
-
-                if cat_match:
-                    current_category = int(cat_match.group(1))
-                    current_category_name = cat_match.group(2).strip()
-
-                elif q_match and current_category:
-                    q_number = int(q_match.group(1))
-                    question = q_match.group(2).strip()
-
-                    data.append({
-                        "meeting": 0,
-                        "category": current_category,
-                        "category_name": current_category_name,
-                        "question_text": question,
-                        "q": q_number,
-                        "w": 0.5,
-                        "w_new" : 0.0,
-                        "Coherence": 0.0,
-                        "Emotional Resonance": 0.0,
-                        "Perceived Helpfulness": 0.0,
-                        "Motivational Impact": 0.0,
-                        "Engagement": 0.0
-                    })
-
-            df = pd.DataFrame(data).fillna("")
+            report = parse_questionnaire_markdown(raw_text)
+            problems = report.problems()
+            if problems:
+                # Upstream silently created an empty/partial tab (audit issue L).
+                self._issue(sheet_name, "questionnaire not parsed; tab NOT created: " + "; ".join(problems))
+                continue
+            df = legacy.initial_block_rows(report.items)
 
             # Only create sheet if it doesn't exist (already checked above)
             self.google_sheets_api.ensure_sheet_exists(
@@ -249,8 +249,9 @@ class Controller():
                 df=df
             )
 
-            print(f"✅ Created/updated sheet: {sheet_name}")
-            print(df.head())
+            print(f"✅ Created/updated sheet: {sheet_name} ({len(df)} questions, {len(report.categories)} categories)")
+            if privacy.clinical_text_logging_enabled():
+                print(df.head())
 
 
 
@@ -271,14 +272,13 @@ class Controller():
             spreadsheet_has_index  = False,
         )
 
-        prompt_info = prompts_info[
-            prompts_info["task"] == "task_1"
-        ].reset_index(drop = True)
-        prompt       = prompt_info.loc[0, "prompt"]
-        system_role  = prompt_info.loc[0, "system_role"]
-        user_role    = prompt_info.loc[0, "user_role"]
-        requirements = prompt_info.loc[0, "requirements"]
-        examples     = str(prompt_info.loc[0, "examples"] or "").strip().split("\n") if pd.notna(prompt_info.loc[0, "examples"]) else []
+        prompt_info  = select_prompt_row(prompts_info, "task_1")
+        prompt       = prompt_info["prompt"]
+        system_role  = prompt_info["system_role"]
+        user_role    = prompt_info["user_role"]
+        requirements = prompt_info["requirements"]
+        examples     = split_cell_lines(prompt_info["examples"])
+        data_start_row = legacy.output_tab_data_start_row(sheets_reporter_tab_output)
 
 
         # get the raw task0 content (assuming first col = metadata, second col = big text)
@@ -319,7 +319,20 @@ class Controller():
             
             # Convert w_new to numeric
             patient_df['w_new'] = pd.to_numeric(patient_df['w_new'], errors='coerce')
-            patient_df[likert_cols] = patient_df[likert_cols].astype(float)
+            if self.strict_validation:
+                # Blank cells crashed the whole batch upstream (audit issue K) and the 0.0
+                # "unscored" sentinel was averaged as a real score (issue E).
+                scores = patient_df[likert_cols].apply(pd.to_numeric, errors='coerce')
+                pending = (patient_df['w_new'].fillna(0.0) == 0.0).all()
+                if pending and (scores.fillna(0.0) != 0.0).any().any():
+                    problems = legacy.validate_scored_block(patient_df, likert_cols)
+                    if problems:
+                        self._issue(sheet_name, "scores incomplete/invalid; weights NOT updated: "
+                                    + "; ".join(problems))
+                        continue
+                patient_df[likert_cols] = scores.fillna(0.0)
+            else:
+                patient_df[likert_cols] = patient_df[likert_cols].astype(float)
             
             # Check if w_new is all zeros and likert columns have scores
             w_new_all_zeros = (patient_df['w_new'] == 0.0).all()
@@ -377,7 +390,11 @@ class Controller():
             
             # Step 5: Check meeting progression and notes availability
             current_meeting_idx = int(patient_df.loc[0,'meeting'])
-            questionnaire, meeting_notes = self._check_meeting_progression(row, current_meeting_idx)
+            try:
+                questionnaire, meeting_notes = self._check_meeting_progression(row, current_meeting_idx)
+            except KeyError as e:
+                self._issue(sheet_name, f"output tab has no column {e}; cannot progress meeting {current_meeting_idx}")
+                continue
 
             if meeting_notes in self.__null_values :
                 print(f"⚠️ Patient {sheet_name}: No next meeting notes available")
@@ -398,11 +415,7 @@ class Controller():
             
         
             # Step 7: Update patient dataframe
-            likert_cols = ["Coherence", "Emotional Resonance", "Perceived Helpfulness", "Motivational Impact", "Engagement"]
-            patient_df["meeting"]   = current_meeting_idx + 1
-            patient_df[likert_cols] = 0.0
-            patient_df["w"]         = patient_df["w_new"]
-            patient_df["w_new"]     = 0.0
+            patient_df = legacy.advance_meeting(patient_df, current_meeting_idx)
 
         
             # Step 8: Update patient sheet with new questions
@@ -428,11 +441,14 @@ class Controller():
             next_task_col = f"meeting{current_meeting_idx + 1}_task1"
             col_idx = self._find_column_index(output_df, next_task_col)
             
-            if col_idx is not None:
+            if col_idx is None:
+                self._issue(sheet_name, f"output tab has no column {next_task_col!r}; questionnaire written to "
+                            f"the patient tab only")
+            else:
                 self.google_sheets_api.update_cell(
                     spreadsheet_id = sheets_reporter_id,
                     tab_name       = sheets_reporter_tab_output.split("!")[0], # output!A2:AH --> output,
-                    row            = row_idx + 3,  # adjust for 0-index + header
+                    row            = row_idx + data_start_row,  # derived from the configured range (issue F)
                     col            = col_idx + 1,  # Google Sheets is 1-indexed
                     value          = merged_questionnaire
                 )
@@ -442,18 +458,7 @@ class Controller():
 
     def _get_last_populated_columns(self, df, num_cols=12):
         """Get the last 12 columns that contain data and return their starting position"""
-        # Find the rightmost column with data
-        last_col_with_data = 0
-        for col_idx in range(len(df.columns) - 1, -1, -1):
-            if not df.iloc[:, col_idx].isnull().all():
-                last_col_with_data = col_idx
-                break
-        
-        # Get the last num_cols columns from that point
-        start_col = max(0, last_col_with_data - num_cols + 1)
-        selected_df = df.iloc[:, start_col:last_col_with_data + 1]
-        
-        return selected_df, start_col
+        return legacy.get_last_populated_columns(df, num_cols=num_cols)
 
     def _update_patient_sheet_columns(self, df, spreadsheet_id, tab_name, start_col_idx):
         """Update only the specific columns in the patient sheet at their original position"""
@@ -478,32 +483,11 @@ class Controller():
 
     def _column_number_to_letter(self, col_num):
         """Convert column number to letter (1=A, 2=B, ..., 27=AA, etc.)"""
-        result = ""
-        while col_num > 0:
-            col_num -= 1
-            result = chr(col_num % 26 + ord('A')) + result
-            col_num //= 26
-        return result
+        return legacy.column_number_to_letter(col_num)
 
     def _calculate_composite_and_update_weights(self, df, likert_cols):
-        """Calculate composite scores and update w_new weights"""
-        # Convert likert columns to numeric
-        df['w'] = df['w'].apply(pd.to_numeric, errors='coerce')
-        df[likert_cols] = df[likert_cols].apply(pd.to_numeric, errors='coerce')
-        
-        # Calculate composite score (fi) for each row
-        df['composite_score'] = df[likert_cols].mean(axis=1)
-        
-        # Calculate w_new using the formula: wi' = wi + α(fi - μ)
-        # where α = 0.2 and μ = 4
-        alpha = 0.2
-        mu = 4
-        df['w_new'] = df['w'] + alpha * (df['composite_score'] - mu)
-
-        # Drop composite score
-        df = df.drop('composite_score', axis=1) 
-        
-        return df
+        """Calculate composite scores and update w_new weights (legacy rule, see legacy.algorithm)."""
+        return legacy.calculate_composite_and_update_weights(df, likert_cols)
 
     def _check_meeting_progression(self, row, current_meeting_idx):
         """Check current meeting number and if next meeting notes are available"""
@@ -521,37 +505,14 @@ class Controller():
         
 
     def _replace_lowest_scoring_questions(self, df, meeting_notes, prompt, system_role, user_role, requirements, examples):
-        tqdm.pandas()
-
-        """Replace 2 lowest scoring questions per category using OpenAI"""
-        # Mark questions to drop (2 lowest per category based on w_new)
-        df["To_Drop"] = False
-        for cat in df["category"].unique():
-            cat_mask = df["category"] == cat
-            cat_df = df[cat_mask]
-            
-            # Get 2 lowest scoring questions in this category
-            lowest_idx = cat_df.nsmallest(2, "w_new").index
-            df.loc[lowest_idx, "To_Drop"] = True
-        
-        # Replace questions using OpenAI
-        for cat in tqdm(df["category"].unique(), desc = "Loading ..."):
-            drop_idx = df[(df["category"] == cat) & (df["To_Drop"])].index
-            if drop_idx.empty:
-                continue
-            
-            # Get existing questions in this category
-            existing_questions = df[(df["category"] == cat) & (~df["To_Drop"])]["question_text"].tolist()
-            
-            # Get the text content from the specified column
-            variables  = {
+        """Replace 2 lowest scoring questions per category using OpenAI (legacy rule)."""
+        def generate(cat, existing_questions):
+            variables = {
                 "meeting_notes"      : meeting_notes,
                 "existing_questions" : existing_questions,
                 "category"           : cat
             }
-        
-            # Execute the custom prompt
-            new_questions = self.openai_api.execute_custom_prompt(
+            return self.openai_api.execute_custom_prompt(
                 prompt       = prompt,
                 variables    = variables,
                 system_role  = system_role,
@@ -559,42 +520,17 @@ class Controller():
                 requirements = requirements,
                 examples     = examples
             )
-            new_questions = [q for q in new_questions.split('\n') if q.strip()]
-                     
-            
-            if len(new_questions) != len(drop_idx):
-                print(f"⚠️ OpenAI returned {len(new_questions)} questions, expected {len(drop_idx)} for category {cat}")
-                continue
-            
-            # Replace the questions
-            for i, idx in enumerate(drop_idx):
-                df.at[idx, "question_text"]         = new_questions[i]
-                # Reset scores for new questions
-                df.at[idx, "w_new"]                 = 0.5  # Reset to default weight
-                df.at[idx, "Coherence"]             = 0.0
-                df.at[idx, "Emotional Resonance"]   = 0.0
-                df.at[idx, "Perceived Helpfulness"] = 0.0
-                df.at[idx, "Motivational Impact"]   = 0.0
-                df.at[idx, "Engagement"]            = 0.0
 
-        # Drop To_Drop
-        df = df.drop('To_Drop', axis=1) 
-        return df
+        def on_mismatch(cat, got, expected):
+            print(f"⚠️ OpenAI returned {got} questions, expected {expected} for category {cat}")
+
+        return legacy.replace_lowest_scoring_questions(df, generate, on_count_mismatch=on_mismatch)
 
 
     def _merge_categories(self, df):
         """Merge all categories and questions into Greek text format"""
-        merged_text = ""
-        for cat in sorted(df["category"].unique()):
-            cat_name = df[df['category'] == cat]['category_name'].iloc[0]
-            merged_text += f"### Κατηγορία {cat}: {cat_name}\n"
-            
-            cat_questions = df[df["category"] == cat].sort_values("q")
-            for _, row in cat_questions.iterrows():
-                merged_text += f"{row['q']}. {row['question_text']}\n"
-            merged_text += "\n"
-        
-        return merged_text.strip()
+        return legacy.merge_categories(df)
+
 
     def _find_column_index(self, df, column_name):
         """Find the index of a column by name"""
@@ -646,182 +582,46 @@ class Controller():
                 print(f"⚠️ Sheet {sheet_name} is empty, skipping")
                 continue
             
-            # Step 2: Split all the dataframe in equal dataframes of 12 columns (20 rows each meeting)
-            # Each meeting has 20 questions (4 questions per 5 categories)
-            cols_per_meeting = 12
-            total_cols      = patient_df.shape[1]
-            num_meetings    = total_cols // cols_per_meeting
-
-            meeting_dataframes = []
-
-            for meeting_idx in range(num_meetings):
-                start_idx             = meeting_idx * cols_per_meeting
-                end_idx               = start_idx + cols_per_meeting
-                meeting_df            = patient_df.iloc[:, start_idx:end_idx].copy()  # slice columns
-                meeting_df['meeting'] = meeting_idx
-                meeting_dataframes.append(meeting_df)
-            
+            # Step 2: split into 12-column meeting blocks (20 rows each)
+            meeting_dataframes = legacy_analysis.split_meeting_blocks(patient_df)
             print(f"   📊 Split into {len(meeting_dataframes)} meetings")
-            
-            # Step 3: Process weight evolution (w -> w_new chain)
-            for i, df in enumerate(meeting_dataframes):
-                if i == 0:
-                    # First meeting: w stays as is, w_new is the updated weight
-                    pass
-                else:
-                    # Subsequent meetings: w becomes the w_new from previous meeting
-                    df['w'] = meeting_dataframes[i-1]['w_new'].values
-            
-            # Step 4: Create unique question registry and timeseries
-            question_registry = {}
-            question_id_counter = 1
-            
-            # Step 4.1: Identify all unique questions across all meetings
-            for meeting_idx, df in enumerate(meeting_dataframes):
-                for _, question_row in df.iterrows():
-                    question_text  = question_row['question_text']
-                    category       = question_row['category']
-                    category_name  = question_row['category_name']
-                    q_number       = question_row['q']
-                    
-                    # Create a unique identifier for this question
-                    question_key = (category, q_number, question_text)
-                    
-                    if question_key not in question_registry:
-                        question_registry[question_key] = {
-                            'question_id'   : f"Q{question_id_counter:03d}",
-                            'category'      : category,
-                            'category_name' : category_name,
-                            'q_number'      : q_number,
-                            'question_text' : question_text,
-                            'timeseries'    : {}
-                        }
-                        question_id_counter += 1
-            
-            # Step 4.2: Build timeseries for each question
-            for meeting_idx, df in enumerate(meeting_dataframes):
-                for _, question_row in df.iterrows():
-                    question_text = question_row['question_text']
-                    category = question_row['category']
-                    q_number = question_row['q']
-                    
-                    question_key = (category, q_number, question_text)
-                    
-                    if question_key in question_registry:
-                        question_registry[question_key]['timeseries'][meeting_idx] = {
-                            'w': question_row['w'],
-                            'w_new': question_row['w_new'],
-                            'Coherence': question_row['Coherence'],
-                            'Emotional_Resonance': question_row['Emotional Resonance'],
-                            'Perceived_Helpfulness': question_row['Perceived Helpfulness'],
-                            'Motivational_Impact': question_row['Motivational Impact'],
-                            'Engagement': question_row['Engagement']
-                        }
-            
-            # Step 5: Identify question changes between meetings
-            question_changes = []
-            
-            for meeting_idx in range(1, len(meeting_dataframes)):
-                current_meeting = meeting_dataframes[meeting_idx]
-                previous_meeting = meeting_dataframes[meeting_idx - 1]
-                
-                # Group by category and q_number to compare
-                for category in current_meeting['category'].unique():
-                    for q_num in range(1, 5):  # Questions 1-4 for each category
-                        
-                        # Get questions from both meetings
-                        curr_question = current_meeting[
-                            (current_meeting['category'] == category) & 
-                            (current_meeting['q'] == q_num)
-                        ]['question_text'].iloc[0] if len(current_meeting[
-                            (current_meeting['category'] == category) & 
-                            (current_meeting['q'] == q_num)
-                        ]) > 0 else None
-                        
-                        prev_question = previous_meeting[
-                            (previous_meeting['category'] == category) & 
-                            (previous_meeting['q'] == q_num)
-                        ]['question_text'].iloc[0] if len(previous_meeting[
-                            (previous_meeting['category'] == category) & 
-                            (previous_meeting['q'] == q_num)
-                        ]) > 0 else None
-                        
-                        # Check if questions are different
-                        if curr_question != prev_question and curr_question is not None and prev_question is not None:
-                            question_changes.append({
-                                'meeting_transition': f"{meeting_idx-1} -> {meeting_idx}",
-                                'category': category,
-                                'q_number': q_num,
-                                'old_question': prev_question,
-                                'new_question': curr_question
-                            })
-            
-            # Step 6: Create wide-format timeseries dataframe (one row per question)
-            wide_timeseries_data = []
 
-            for question_key, question_info in question_registry.items():
-                row_data = {
-                    'patient_id': f"patient{row_idx+3}",
-                    'question_id': question_info['question_id'],
-                    'category': question_info['category'],
-                    'category_name': question_info['category_name'],
-                    'q_number': question_info['q_number'],
-                    'question_text': question_info['question_text']
-                }
-                
-                # Add columns for each meeting
-                for meeting_idx in range(len(meeting_dataframes)):
-                    metrics = question_info['timeseries'].get(meeting_idx, None)
-                    if metrics is not None:
-                        row_data[f'w_{meeting_idx}'] = metrics['w']
-                        row_data[f'Coherence_{meeting_idx}'] = metrics['Coherence']
-                        row_data[f'Emotional_Resonance_{meeting_idx}'] = metrics['Emotional_Resonance']
-                        row_data[f'Perceived_Helpfulness_{meeting_idx}'] = metrics['Perceived_Helpfulness']
-                        row_data[f'Motivational_Impact_{meeting_idx}'] = metrics['Motivational_Impact']
-                        row_data[f'Engagement_{meeting_idx}'] = metrics['Engagement']
-                    else:
-                        # Fill with NaN if the question didn't exist in this meeting
-                        row_data[f'w_{meeting_idx}'] = None
-                        row_data[f'Coherence_{meeting_idx}'] = None
-                        row_data[f'Emotional_Resonance_{meeting_idx}'] = None
-                        row_data[f'Perceived_Helpfulness_{meeting_idx}'] = None
-                        row_data[f'Motivational_Impact_{meeting_idx}'] = None
-                        row_data[f'Engagement_{meeting_idx}'] = None
+            # Steps 3-5: explicit provenance. Each block's own `w` is authoritative; upstream
+            # overwrote it positionally with the previous block's w_new, so a replacement
+            # inherited the replaced question's weight (audit issue B).
+            question_registry, question_changes = legacy_analysis.build_question_registry(
+                sheet_name, meeting_dataframes
+            )
 
-                wide_timeseries_data.append(row_data)
+            # Step 6: wide-format timeseries (one row per question instance)
+            timeseries_df = legacy_analysis.registry_to_timeseries(
+                sheet_name, question_registry, len(meeting_dataframes)
+            )
+            legacy_analysis.assert_finite_weights(timeseries_df)
 
-            timeseries_df = pd.DataFrame(wide_timeseries_data)
-            
-            # Step 7: Print summary
+            # Step 7: summary (question text redacted unless explicitly enabled)
             print(f"   📈 Question Registry Summary:")
             print(f"      - Total unique questions: {len(question_registry)}")
             print(f"      - Question changes detected: {len(question_changes)}")
             print(f"      - Timeseries data points: {len(timeseries_df)}")
-            
-            if question_changes:
-                print(f"   🔄 Question Changes:")
-                for change in question_changes:
-                    print(f"      - Meeting {change['meeting_transition']}, Category {change['category']}, Q{change['q_number']}")
-                    print(f"        Old: {change['old_question'][:60]}...")
-                    print(f"        New: {change['new_question'][:60]}...")
-            
-            # Step 8: Save results
+            for change in question_changes:
+                old = question_registry[change["old_question_id"]].question_text
+                new = question_registry[change["new_question_id"]].question_text
+                print(f"      - Meeting {change['meeting_transition']}, Category {change['category']}, "
+                      f"Q{change['q_number']}: {redact(old, 60)} -> {redact(new, 60)}")
+
+            # Step 8: save results (deterministic question ids; upstream used salted hash(), issue H)
             os.makedirs("./data", exist_ok=True)
             output_file = f"./data/timeseries_{sheet_name}.csv"
             timeseries_df.to_csv(output_file, index=False)
             print(f"   💾 Saved timeseries data to {output_file}")
-            
-            # Save question registry
+
             registry_file = f"./data/question_registry_{sheet_name}.json"
-            import json
             with open(registry_file, 'w', encoding='utf-8') as f:
-                # Convert to JSON-serializable format
-                registry_json = {}
-                for key, value in question_registry.items():
-                    registry_json[f"{key[0]}_{key[1]}_{hash(key[2]) % 10000}"] = value
-                json.dump(registry_json, f, ensure_ascii=False, indent=2)
+                json.dump(legacy_analysis.registry_to_json(question_registry), f,
+                          ensure_ascii=False, indent=2, default=str)
             print(f"   💾 Saved question registry to {registry_file}")
-            
+
             print(f"✅ Completed processing {sheet_name}")
             print("-" * 80)
 
@@ -833,7 +633,7 @@ class Controller():
         """
         os.makedirs(save_dir, exist_ok=True)
 
-        data_files = [f for f in os.listdir("./data") if f.endswith(".csv")]
+        data_files = sorted(f for f in os.listdir("./data") if f.startswith("timeseries_") and f.endswith(".csv"))
 
         for file in data_files:
             df = pd.read_csv(f"./data/{file}")
@@ -914,6 +714,12 @@ class Controller():
         # Optional OAuth refresh via Dropbox (off by default):
         # self._refresh_tokens()
 
+        v2_runners = {"v2_select": "v2_select", "v2_import_feedback": "v2_import_feedback"}
+        if operation in v2_runners:
+            # V2 (experimental) runs on local state and never initialises Google Sheets.
+            from adaptive_questionnaires.v2 import cli as v2_cli
+            return getattr(v2_cli, v2_runners[operation])(self.mk1, self.args)
+
         runners = {
             "task0": self.run_task0,
             "task1_preparation": self.run_task1_preparation,
@@ -924,15 +730,26 @@ class Controller():
         if operation not in runners:
             raise ValueError(
                 f"Unknown operation={operation!r}. "
-                f"Choose one of: {', '.join(runners)}"
+                f"Choose one of: {', '.join(list(runners) + list(v2_runners))}"
             )
         self.run_initialization()
         runners[operation]()
+        return self.report()
+
+    def report(self) -> int:
+        """Print integrity problems found during the run; return a process exit code."""
+        if not self.run_issues:
+            return 0
+        print(f"\n⚠️ Completed with {len(self.run_issues)} integrity issue(s); affected items were skipped:")
+        for it in self.run_issues:
+            print(f"   - {it['where']}: {it['message']}")
+        return 2
 
 
-def main() -> None:
+def main(argv=None) -> None:
     """CLI entry used by ``main.py`` and ``python -m adaptive_questionnaires``."""
-    Controller(MkI.get_instance(_logging=True)).run()
+    code = Controller(MkI.get_instance(_logging=True), argv=argv).run()
+    sys.exit(code or 0)
 
 
 if __name__ == "__main__":
